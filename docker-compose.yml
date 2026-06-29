@@ -1,0 +1,27 @@
+# QueueMaster — orchestrates the backend (API + WebSocket) and frontend (nginx-served SPA).
+# Usage: docker compose up --build   then open http://localhost:3000
+
+services:
+  backend:
+    build: ./backend
+    container_name: queuemaster-backend
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: production
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the static bundle at build time (Vite requirement).
+        VITE_API_URL: http://localhost:4000
+    container_name: queuemaster-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -6,15 +6,16 @@ import { Customer, QueueStatus } from '../types/customer';
 interface QueueSectionProps {
   status: QueueStatus;
   customers: Customer[];
-  onUpdateStatus: (id: string, status: QueueStatus) => void;
-  onRemove: (id: string) => void;
+  now: number;
+  onUpdateStatus: (id: string, status: QueueStatus) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
 }
 
 /**
  * One status group (e.g. "Waiting"): a heading with a live count and the matching customer rows.
  * Waiting customers get a 1-based position number; other statuses do not.
  */
-export function QueueSection({ status, customers, onUpdateStatus, onRemove }: QueueSectionProps) {
+export function QueueSection({ status, customers, now, onUpdateStatus, onRemove }: QueueSectionProps) {
   const { sectionTitle } = STATUS_CONFIG[status];
 
   return (
@@ -27,7 +28,7 @@ export function QueueSection({ status, customers, onUpdateStatus, onRemove }: Qu
       </h2>
 
       {customers.length === 0 ? (
-        <EmptyState message={`No ${sectionTitle.toLowerCase()} customers.`} />
+        <EmptyState message={`No ${sectionTitle.toLowerCase()} customers.`} compact />
       ) : (
         <ul className="flex flex-col gap-2">
           {customers.map((customer, index) => (
@@ -35,6 +36,7 @@ export function QueueSection({ status, customers, onUpdateStatus, onRemove }: Qu
               key={customer.id}
               customer={customer}
               position={status === 'waiting' ? index + 1 : undefined}
+              now={now}
               onUpdateStatus={onUpdateStatus}
               onRemove={onRemove}
             />

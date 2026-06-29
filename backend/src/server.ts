@@ -19,6 +19,21 @@ function bootstrap(): void {
     console.log(`[QueueMaster] API + WebSocket listening on http://localhost:${env.port}`);
     console.log(`[QueueMaster] Allowing CORS origin: ${env.corsOrigin}`);
   });
+
+  // Graceful shutdown so `docker compose down` / Ctrl-C close connections cleanly.
+  const shutdown = (signal: string) => {
+    console.log(`\n[QueueMaster] ${signal} received — shutting down…`);
+    io.close();
+    httpServer.close(() => {
+      console.log('[QueueMaster] closed. Bye 👋');
+      process.exit(0);
+    });
+    // Force-exit if connections linger.
+    setTimeout(() => process.exit(1), 5000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 bootstrap();

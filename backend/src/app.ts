@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { Application, Request, Response } from 'express';
 import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { requestLogger } from './middleware/requestLogger';
 import { queueRouter } from './routes/queue.routes';
 
 /**
@@ -13,10 +14,11 @@ export function createApp(): Application {
 
   app.use(cors({ origin: env.corsOrigin }));
   app.use(express.json());
+  app.use(requestLogger);
 
   // Liveness probe — handy for Docker/monitoring and a quick manual sanity check.
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
   });
 
   app.use('/api/queue', queueRouter);

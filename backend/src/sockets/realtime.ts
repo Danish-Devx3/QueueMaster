@@ -18,7 +18,13 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
   });
 
   io.on('connection', (socket) => {
+    // Send the current snapshot immediately so a new client paints correct state at once.
     socket.emit(QUEUE_UPDATED_EVENT, queueService.list());
+    console.log(`[socket] client connected (${io.engine.clientsCount} online)`);
+
+    socket.on('disconnect', () => {
+      console.log(`[socket] client disconnected (${io.engine.clientsCount} online)`);
+    });
   });
 
   return io;

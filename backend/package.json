@@ -2,11 +2,10 @@
   "name": "queuemaster-backend",
   "version": "1.0.0",
   "description": "QueueMaster backend — REST API + WebSocket for a customer waiting queue",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
@@ -25,7 +24,6 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.2",
-    "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
   }
 }

@@ -28,7 +28,8 @@ every open tab/device** via WebSockets.
 | Layer        | Technology                                              |
 | ------------ | ------------------------------------------------------- |
 | Frontend     | React + TypeScript, Tailwind CSS, Vite, socket.io-client |
-| Backend      | Node.js + Express + TypeScript, Socket.IO               |
+| Backend      | Express + TypeScript, Socket.IO                         |
+| Runtime / PM | [Bun](https://bun.sh) — runs the TypeScript backend directly (no compile step) and is the package manager for both apps |
 | Storage      | In-memory (`Map`) — see [Compromises](#-compromises)    |
 | Realtime     | WebSockets (Socket.IO)                                  |
 | Deployment   | Docker (two containers) + Docker Compose; nginx serves the frontend |
@@ -176,22 +177,25 @@ curl -X POST http://localhost:4000/api/queue \
 
 ### Option B — Local development (hot reload)
 
-> **Prerequisite:** Node.js 20+.
+> **Prerequisite:** [Bun](https://bun.sh) 1.x (`curl -fsSL https://bun.sh/install | bash`).
 
 ```bash
-# Terminal 1 — backend
+# Terminal 1 — backend (Bun runs the TypeScript directly, with --watch reload)
 cd backend
-npm install
-npm run dev        # http://localhost:4000
+bun install
+bun run dev        # http://localhost:4000
 
 # Terminal 2 — frontend
 cd frontend
-npm install
-npm run dev        # http://localhost:3000
+bun install
+bun run dev        # http://localhost:3000
 ```
 
 The frontend defaults to `http://localhost:4000` for the API. To override, create
 `frontend/.env` from `.env.example` and set `VITE_API_URL`.
+
+> **Type checking:** `cd backend && bun run typecheck` (runs `tsc --noEmit`). The frontend's
+> `bun run build` type-checks as part of the production build.
 
 ---
 

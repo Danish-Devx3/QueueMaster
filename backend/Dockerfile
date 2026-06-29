@@ -1,24 +1,19 @@
-# ---------- Build stage: compile TypeScript -> dist/ ----------
-FROM node:20-alpine AS build
+# QueueMaster backend — Bun as both package manager and runtime.
+# Bun executes TypeScript directly, so there's no separate compile/dist step.
+FROM oven/bun:1-alpine AS deps
 WORKDIR /app
 
-# Install all deps (incl. dev) for the build.
-COPY package*.json ./
-RUN npm ci
+# Install production dependencies only, against the committed lockfile.
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
-
-# ---------- Runtime stage: production deps + compiled output ----------
-FROM node:20-alpine AS runtime
+FROM oven/bun:1-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-COPY --from=build /app/dist ./dist
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock tsconfig.json ./
+COPY src ./src
 
 EXPOSE 4000
-CMD ["node", "dist/server.js"]
+CMD ["bun", "run", "src/server.ts"]

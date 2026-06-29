@@ -1,17 +1,17 @@
-# ---------- Build stage: produce the static Vite bundle ----------
-FROM node:20-alpine AS build
+# ---------- Build stage: produce the static Vite bundle with Bun ----------
+FROM oven/bun:1-alpine AS build
 WORKDIR /app
 
 # Vite inlines env vars at BUILD time, so VITE_API_URL must be provided as a build arg
-# (wired from docker-compose) and exported before `npm run build`.
+# (wired from docker-compose) and exported before the build runs.
 ARG VITE_API_URL=http://localhost:4000
 ENV VITE_API_URL=$VITE_API_URL
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN bun run build
 
 # ---------- Runtime stage: serve static files with nginx ----------
 FROM nginx:alpine AS runtime

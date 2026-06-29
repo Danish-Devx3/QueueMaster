@@ -1,6 +1,6 @@
 /**
  * Domain types shared across the backend.
- * Kept dependency-free so services, controllers and sockets all reference one source of truth.
+ * Kept dependency-free so services, controllers and realtime all reference one source of truth.
  */
 
 /** Lifecycle of a customer in the queue: waiting -> serving -> completed. */

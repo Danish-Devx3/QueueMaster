@@ -1,4 +1,4 @@
-# QueueMaster — orchestrates the backend (API + WebSocket) and frontend (nginx-served SPA).
+# QueueMaster — orchestrates the backend (API + SSE) and frontend (nginx-served SPA).
 # Usage: docker compose up --build   then open http://localhost:3000
 
 services:

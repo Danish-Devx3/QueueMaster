@@ -1,7 +1,7 @@
 {
   "name": "queuemaster-backend",
   "version": "1.0.0",
-  "description": "QueueMaster backend — REST API + WebSocket for a customer waiting queue",
+  "description": "QueueMaster backend — REST API + SSE for a customer waiting queue",
   "main": "src/server.ts",
   "scripts": {
     "dev": "bun --watch src/server.ts",
@@ -12,13 +12,12 @@
     "queue",
     "express",
     "typescript",
-    "socket.io"
+    "sse"
   ],
   "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

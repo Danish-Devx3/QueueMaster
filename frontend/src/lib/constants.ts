@@ -1,6 +1,6 @@
 import { QueueStatus } from '../types/customer';
 
-/** Base URL for the backend REST API + WebSocket. Baked at build time by Vite. */
+/** Base URL for the backend REST API + SSE stream. Baked at build time by Vite. */
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 /** Display config per status: section heading + colour classes for the badge. */

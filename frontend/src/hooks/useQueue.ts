@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, queueApi } from '../services/api';
-import { QUEUE_UPDATED_EVENT, getSocket, onConnectionChange } from '../services/socket';
+import { openQueueStream } from '../services/stream';
 import { Customer, QueueStatus } from '../types/customer';
 
 interface UseQueueResult {
   customers: Customer[];
   loading: boolean;
   error: string | null;
-  /** Live WebSocket connection state, surfaced to the UI as a status indicator. */
+  /** Live SSE connection state, surfaced to the UI as a status indicator. */
   connected: boolean;
   clearError: () => void;
   addCustomer: (input: { name: string; phone?: string }) => Promise<boolean>;
@@ -20,19 +20,20 @@ interface UseQueueResult {
  *
  * Data flow:
  *   1. Initial REST GET populates the list (with loading + error handling).
- *   2. A Socket.IO subscription keeps the list live: the server broadcasts the full queue after
- *      every mutation, so this hook just replaces local state with each snapshot. Every browser
- *      tab/device therefore stays in sync, and even the acting client updates via the same path —
- *      no optimistic/merge logic to get wrong.
- *   3. Action methods issue REST commands; success is reflected by the broadcast above. As a
- *      safety net, if the socket is disconnected we refetch after a mutation, and we always
- *      refetch on (re)connect so the UI self-heals after a network blip.
+ *   2. A Server-Sent Events stream keeps the list live: the server pushes the full queue on
+ *      connect and after every mutation, so this hook just replaces local state with each
+ *      snapshot. Because the server re-sends a snapshot on every (re)connection, reconnects
+ *      self-heal automatically — no manual resync needed.
+ *   3. Action methods issue REST commands; success is reflected by the stream above. As a safety
+ *      net, if the stream is currently disconnected we refetch after a mutation.
  */
 export function useQueue(): UseQueueResult {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  // Mirror of `connected` readable synchronously inside callbacks without re-creating them.
+  const connectedRef = useRef(false);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -42,14 +43,13 @@ export function useQueue(): UseQueueResult {
 
   const refetch = useCallback(async () => {
     try {
-      const data = await queueApi.list();
-      setCustomers(data);
+      setCustomers(await queueApi.list());
     } catch (err) {
       reportError(err, 'Failed to load the queue.');
     }
   }, [reportError]);
 
-  // Initial load + live socket subscription (queue updates + connection state).
+  // Initial load + live SSE subscription (queue updates + connection state).
   useEffect(() => {
     let active = true;
 
@@ -65,30 +65,27 @@ export function useQueue(): UseQueueResult {
         if (active) setLoading(false);
       });
 
-    const socket = getSocket();
-    const handleUpdate = (data: Customer[]) => setCustomers(data);
-    socket.on(QUEUE_UPDATED_EVENT, handleUpdate);
-
-    // Track connectivity and resync whenever the socket (re)connects.
-    const unsubscribe = onConnectionChange((isConnected) => {
-      setConnected(isConnected);
-      if (isConnected) void refetch();
+    const stream = openQueueStream({
+      onQueue: (data) => setCustomers(data),
+      onConnectionChange: (isConnected) => {
+        connectedRef.current = isConnected;
+        setConnected(isConnected);
+      },
     });
 
     return () => {
       active = false;
-      socket.off(QUEUE_UPDATED_EVENT, handleUpdate);
-      unsubscribe();
+      stream.close();
     };
-  }, [reportError, refetch]);
+  }, [reportError]);
 
-  /** Run a mutation, surface errors, and refetch as a fallback when the socket can't push. */
+  /** Run a mutation, surface errors, and refetch as a fallback when the stream can't push. */
   const runMutation = useCallback(
     async (action: () => Promise<unknown>, fallbackMessage: string): Promise<boolean> => {
       try {
         await action();
         setError(null);
-        if (!getSocket().connected) await refetch();
+        if (!connectedRef.current) await refetch();
         return true;
       } catch (err) {
         reportError(err, fallbackMessage);

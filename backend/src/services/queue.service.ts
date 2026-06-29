@@ -11,7 +11,7 @@ import {
  * QueueService — the single source of truth for queue state and business rules.
  *
  * Storage is an in-memory Map keyed by customer id. The class exposes only domain operations
- * (list / add / updateStatus / remove) and never touches HTTP or sockets, so it stays pure and
+ * (list / add / updateStatus / remove) and never touches HTTP or realtime, so it stays pure and
  * trivially swappable for a database-backed repository later (see README "If I Had Another 3 Hours").
  */
 class QueueService {

@@ -4,7 +4,8 @@
 > (clinics, barber shops, repair desks), built as a time-boxed (~1 hour) full-stack exercise.
 
 The business owner can add customers, move them through **Waiting → Being Served → Completed**,
-and remove them — with the queue updating **live across every open tab/device** over WebSockets.
+and remove them — with the queue updating **live across every open tab/device** over
+**Server-Sent Events (SSE)**.
 
 🔗 **Repository:** https://github.com/Danish-Devx3/QueueMaster
 
@@ -33,7 +34,7 @@ in-memory storage, and Docker (two containers) orchestrated with Docker Compose.
 - ➕ **Add / 🔄 Serve / ✅ Complete / 🗑️ Remove** customers, with a two-step inline confirm on remove.
 - 👀 **Live queue view** grouped into *Being Served → Waiting → Completed*, with per-customer
   position and time-in-queue.
-- ⚡ **Real-time sync over WebSockets** — every change is broadcast to all connected screens
+- ⚡ **Real-time sync over Server-Sent Events** — every change is pushed to all connected screens
   instantly, with a **Live/Offline** indicator and automatic resync on reconnect.
 - 📊 **At-a-glance stats** (waiting / being served / completed counts).
 - 🧯 **Graceful error handling** end-to-end: normalized API errors, a dismissible UI error banner,
@@ -45,11 +46,11 @@ in-memory storage, and Docker (two containers) orchestrated with Docker Compose.
 
 | Layer        | Technology                                              |
 | ------------ | ------------------------------------------------------- |
-| Frontend     | React + TypeScript, Tailwind CSS, Vite, socket.io-client |
-| Backend      | Express + TypeScript, Socket.IO                         |
+| Frontend     | React + TypeScript, Tailwind CSS, Vite, native `EventSource` |
+| Backend      | Express + TypeScript                                    |
 | Runtime / PM | [Bun](https://bun.sh) — runs the TypeScript backend directly (no compile step) and is the package manager for both apps |
 | Storage      | In-memory (`Map`) — see [Trade-offs](#-trade-offs--compromises-1-hour-box) |
-| Realtime     | WebSockets (Socket.IO)                                  |
+| Realtime     | Server-Sent Events (SSE) — zero realtime dependencies   |
 | Deployment   | Docker (two containers) + Docker Compose; nginx serves the frontend |
 
 ---
@@ -67,7 +68,7 @@ in-memory storage, and Docker (two containers) orchestrated with Docker Compose.
    docker compose up --build
    ```
    *(On older Docker installs: `docker-compose up --build`.)*
-3. Wait for the backend log: `API + WebSocket listening on http://localhost:4000`.
+3. Wait for the backend log: `API + SSE listening on http://localhost:4000`.
 4. Open the app:
    ```
    http://localhost:3000
@@ -111,10 +112,10 @@ The frontend defaults to `http://localhost:4000` for the API; override via `fron
 
 | Criterion | Decision |
 | --------- | -------- |
-| **Folder structure** | Backend split into **routes → controllers → services**, with `sockets/`, `middleware/`, `types/`, `utils/`, `config/`. Frontend split into `components/` (presentational), `hooks/` (state), `services/` (REST + socket), `lib/`, `types/`. Each layer has one job. |
+| **Folder structure** | Backend split into **routes → controllers → services**, with `realtime/`, `middleware/`, `types/`, `utils/`, `config/`. Frontend split into `components/` (presentational), `hooks/` (state), `services/` (REST + stream), `lib/`, `types/`. Each layer has one job. |
 | **API design** | Clean, resource-oriented REST around `/api/queue` (`GET`/`POST`/`PATCH`/`DELETE`), correct status codes (201/200/204/400/404), and a single consistent error envelope. See [API Reference](#-api-reference). |
 | **State management** | A single **`useQueue` custom hook** owns *all* state and networking — no Redux, no prop-drilled setters. Components stay dumb/presentational. |
-| **Realtime architecture** | **REST for commands, WebSocket for push.** After any mutation the server broadcasts the **full queue**; clients just replace local state with each snapshot. The server is the single source of truth, so there's no fragile client-side merge/optimistic logic and every tab converges. |
+| **Realtime architecture** | **REST for commands, SSE for push.** The realtime traffic is one-directional (server → client), so SSE is the right-sized tool — no WebSocket upgrade, no realtime library, and `EventSource` gives reconnection for free. After any mutation the server pushes the **full queue**; clients just replace local state with each snapshot. The server is the single source of truth, so there's no fragile client-side merge/optimistic logic and every tab converges. Because the server re-sends a snapshot on every (re)connection, reconnects self-heal automatically. |
 | **Error handling** | Backend: validation middleware + a central error handler producing `{ error: { message, code } }`; async handlers wrapped so nothing crashes the process. Frontend: a `fetch` wrapper normalizes network/HTTP/parse failures into friendly messages surfaced via a dismissible banner; loading skeletons and empty states cover every UI state. |
 | **Code quality** | Strict TypeScript (`strict`, `noUnusedLocals`, etc.) on both sides, consistent naming, small single-purpose modules, and explanatory comments on the *why* (not the *what*). |
 | **UI** | Deliberately simple and clean: status sections, live connection badge, stats, time-in-queue, two-step remove confirm, per-action loading — all with Tailwind, no UI kit. |
@@ -123,19 +124,36 @@ The frontend defaults to `http://localhost:4000` for the API; override via `fron
 
 ```
 ┌──────────────────────────────┐         ┌────────────────────────────────────┐
-│  Frontend (nginx :3000)       │         │  Backend (Express + Socket.IO :4000) │
+│  Frontend (nginx :3000)       │         │  Backend (Express :4000)             │
 │                               │         │                                      │
 │  React + useQueue hook        │         │  routes → controllers → services     │
 │   ├─ REST: commands ──────────┼────────▶│   GET/POST/PATCH/DELETE /api/queue   │
 │   │   (add/serve/complete/del)│         │        │                             │
-│   └─ WebSocket: live updates ◀┼─────────┼─ emit "queue:updated" (full queue)   │
-│       (queue:updated)         │         │        ▲ after every mutation        │
+│   └─ SSE: live updates ◀──────┼─────────┼─ GET /api/queue/stream               │
+│       EventSource             │         │   push "queue:updated" (full queue)  │
+│       (queue:updated)         │         │        ▲ on connect + after mutation │
 └──────────────────────────────┘         │   In-memory Map<id, Customer>        │
                                           └────────────────────────────────────┘
 ```
 
 The in-memory store lives behind a pure `QueueService`, so swapping it for a real database later
-touches nothing else (controllers, sockets and UI stay identical).
+touches nothing else (controllers, realtime and UI stay identical).
+
+### Why SSE over WebSocket?
+
+The realtime channel here is **one-directional** — the server pushes queue updates, and every
+client → server action already goes over REST. That's exactly what SSE is for, so it's the
+better-fit choice:
+
+- **No extra dependency** — native `EventSource` in the browser + a plain `text/event-stream`
+  response on the server (removing `socket.io` / `socket.io-client` shrank the frontend bundle by
+  ~13 KB gzipped).
+- **Reconnection for free** — `EventSource` retries automatically, and since the server sends a
+  full snapshot on each connection, clients self-heal with zero extra code.
+- **Plays nicely with HTTP infra** — it's just HTTP, so proxies/CDNs need no upgrade handling.
+
+WebSocket would be the right call if the app grew **bidirectional** needs (live collaboration,
+presence, typing) — noted in [If I Had Another 3 Hours](#-if-i-had-another-3-hours).
 
 ---
 
@@ -145,13 +163,13 @@ touches nothing else (controllers, sockets and UI stay identical).
 QueueMaster/
 ├── backend/
 │   ├── src/
-│   │   ├── server.ts              # composition root: HTTP + Socket.IO + graceful shutdown
+│   │   ├── server.ts              # composition root: app + SSE keep-alive + graceful shutdown
 │   │   ├── app.ts                 # Express app (cors, json, logging, routes, error handling)
 │   │   ├── config/env.ts          # typed env config with safe defaults
-│   │   ├── routes/                # RESTful route definitions
+│   │   ├── routes/                # RESTful route definitions (incl. /stream)
 │   │   ├── controllers/           # request/response orchestration + broadcast
 │   │   ├── services/              # in-memory store + business rules (pure, swappable)
-│   │   ├── sockets/               # Socket.IO setup + broadcast helper
+│   │   ├── realtime/              # SSE hub: holds open streams + broadcasts events
 │   │   ├── middleware/            # validation, request logging, central error handler
 │   │   ├── types/                 # shared domain types
 │   │   └── utils/                 # AppError, asyncHandler
@@ -163,7 +181,7 @@ QueueMaster/
 │   │   ├── components/            # AddCustomerForm, QueueList, QueueSection, CustomerItem,
 │   │   │                          # QueueStats, ConnectionStatus, StatusBadge, EmptyState, …
 │   │   ├── hooks/                 # useQueue (state + networking), useNow (ticker)
-│   │   ├── services/              # api.ts (REST) + socket.ts (WebSocket)
+│   │   ├── services/              # api.ts (REST) + stream.ts (SSE / EventSource)
 │   │   ├── lib/                   # constants, time formatting
 │   │   └── types/                 # domain types (mirror of backend)
 │   ├── nginx.conf                 # SPA fallback
@@ -181,14 +199,22 @@ Base URL: `http://localhost:4000`
 
 | Method   | Endpoint           | Body                       | Success         | Description                              |
 | -------- | ------------------ | -------------------------- | --------------- | ---------------------------------------- |
-| `GET`    | `/api/health`      | —                          | `200 OK`        | Liveness → `{ "status": "ok", "uptime": 12 }` |
-| `GET`    | `/api/queue`       | —                          | `200 OK`        | List all customers (FIFO). `?status=` filter optional |
-| `POST`   | `/api/queue`       | `{ "name", "phone?" }`     | `201 Created`   | Add a customer (status defaults to `waiting`) |
-| `PATCH`  | `/api/queue/:id`   | `{ "status" }`             | `200 OK`        | Update status (`waiting`/`serving`/`completed`) |
-| `DELETE` | `/api/queue/:id`   | —                          | `204 No Content`| Remove a customer                        |
+| `GET`    | `/api/health`        | —                        | `200 OK`        | Liveness → `{ "status": "ok", "uptime": 12 }` |
+| `GET`    | `/api/queue`         | —                        | `200 OK`        | List all customers (FIFO). `?status=` filter optional |
+| `GET`    | `/api/queue/stream`  | —                        | `200 OK` (stream) | **SSE** `text/event-stream` of live queue updates |
+| `POST`   | `/api/queue`         | `{ "name", "phone?" }`   | `201 Created`   | Add a customer (status defaults to `waiting`) |
+| `PATCH`  | `/api/queue/:id`     | `{ "status" }`           | `200 OK`        | Update status (`waiting`/`serving`/`completed`) |
+| `DELETE` | `/api/queue/:id`     | —                        | `204 No Content`| Remove a customer                        |
 
-**Realtime:** clients receive the full queue on the `queue:updated` Socket.IO event — on connect
-and after every mutation.
+**Realtime:** `GET /api/queue/stream` is a Server-Sent Events endpoint. It emits a named
+`queue:updated` event whose `data` is the full queue (JSON) — once on connect, then after every
+mutation. Inspect it directly with:
+
+```bash
+curl -N http://localhost:4000/api/queue/stream
+# event: queue:updated
+# data: [ { "id": "…", "name": "Ada Lovelace", "status": "waiting", … } ]
+```
 
 **Customer shape**
 
@@ -261,13 +287,15 @@ In rough priority order:
    inferred types — one source of truth for shape *and* validation.
 3. **Automated tests.** Unit (`QueueService`), integration (routes via supertest), component (RTL).
 4. **Auth & multi-tenancy.** JWT login so multiple businesses each manage an isolated queue.
-5. **Optimistic UI updates** with rollback, for extra snappiness on slow links (the WebSocket
-   broadcast already keeps everyone consistent).
-6. **Ops polish.** Docker healthchecks (`depends_on: condition: service_healthy`), structured
+5. **Optimistic UI updates** with rollback, for extra snappiness on slow links (the SSE broadcast
+   already keeps everyone consistent).
+6. **WebSocket upgrade — only if it's warranted.** SSE is the right fit for today's one-way flow.
+   If the product grows **bidirectional** needs (multi-staff live collaboration, presence/"who's
+   viewing", typing indicators), I'd switch the realtime layer to WebSocket. The seam is small:
+   the `SseHub` would become a socket hub, and `services/stream.ts` would swap `EventSource` for a
+   socket client — controllers and UI stay the same.
+7. **Ops polish.** Docker healthchecks (`depends_on: condition: service_healthy`), structured
    logging, rate limiting, metrics (avg wait time, served/day), and CI (lint + typecheck + test + build).
-
-> **Note:** real-time **WebSockets are already implemented** in this build (they'd otherwise be on
-> this list), which is why they don't appear above.
 
 ---
 
@@ -279,5 +307,6 @@ This build was verified end-to-end:
   correct shapes.
 - Frontend production build succeeds.
 - `docker compose up --build` → backend health `{ "status": "ok" }`, add-customer works, frontend
-  served (HTTP 200), Socket.IO handshake succeeds, and the CORS preflight returns 204.
+  served (HTTP 200), the SSE stream emits the initial snapshot and pushes `queue:updated` on
+  mutation, and the CORS preflight returns 204.
 - Two-tab test confirms live updates and the Live/Offline indicator.

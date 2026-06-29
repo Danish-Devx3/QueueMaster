@@ -4,7 +4,7 @@
  */
 export const env = {
   port: Number(process.env.PORT) || 4000,
-  /** Allowed browser origin for CORS + Socket.IO. */
+  /** Allowed browser origin for CORS (REST + SSE stream). */
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   nodeEnv: process.env.NODE_ENV || 'development',
 } as const;

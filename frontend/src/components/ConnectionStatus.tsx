@@ -3,7 +3,7 @@ interface ConnectionStatusProps {
 }
 
 /**
- * Small live indicator for the WebSocket connection. Reassures the operator that the queue is
+ * Small live indicator for the SSE connection. Reassures the operator that the queue is
  * updating in real time — and makes it obvious when it isn't.
  */
 export function ConnectionStatus({ connected }: ConnectionStatusProps) {
